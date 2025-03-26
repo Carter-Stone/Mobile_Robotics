@@ -29,9 +29,9 @@
 			]
 		}
 	},
-	"hostRequirements": {
-		"gpu": "optional",
-		"cpus": 2,
-		"memory": "8gb"
-	}
+	// "hostRequirements": {
+	// 	"gpu": "optional",
+	// 	"cpus": 2,
+	// 	"memory": "8gb"
+	// }
 }
