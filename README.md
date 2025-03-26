@@ -78,6 +78,9 @@ You can now use the VSCode terminal to launch all the commands you need and run 
 
 **The devcontainer installs all dependencies of the workspace automatically as much as possible, and also tries to build the workspace when it is created, to speed up later colcon builds.**
 
+git config --global user.name "Carter"
+git config --global user.email "stoney300804@gmail.com"
+
 ### References
 
 1. [cmp3103-ws](https://github.com/UoL-SoCS/cmp3103-ws)
