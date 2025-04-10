@@ -28,7 +28,9 @@ class ColourChaser(Node):
     def __init__(self):
         super().__init__('colour_chaser')
         self.pub_cmd_vel = self.create_publisher(Twist, 'cmd_vel', 1)
+        print("Publisher created")
         self.create_subscription(Image, '/limo/depth_camera_link/image_raw', self.camera_callback, 1)
+        print("Signal recieved")
 
         self.br = CvBridge()
 
@@ -43,13 +45,20 @@ class ColourChaser(Node):
         # Convert image to HSV
         hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
-        # Green colour mask
+        # Colour masks
         # Edited code from:
         # https://answers.opencv.org/question/237367/color-threshholding-only-outputs-edge-for-green-color/
         ########################################
+        # Identifies the upper and lower thresholdes of green
         lower_green = np.array([80, 140, 110]) 
         upper_green = np.array([90, 160, 125]) 
+
+        # Identifies the upper and lower thresholds of red
+        lower_red = np.array([170, 70, 50]) 
+        upper_red = np.array([180, 255, 255]) 
+        # isolates colours within that range
         green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
+        #red_mask = cv2.inRange(hsv_image, lower_red, upper_red)
         ########################################
 
         # Sorts by area and keeps the biggest
@@ -82,7 +91,7 @@ class ColourChaser(Node):
                     print("en route")    
         else:
             print("No target fount")
-            self.tw.angular.z=0.3 # Turn until we find something
+            self.tw.angular.z=0.3 # Turn left until we find something
         
         self.pub_cmd_vel.publish(self.tw)
 
