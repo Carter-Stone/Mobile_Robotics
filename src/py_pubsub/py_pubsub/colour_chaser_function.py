@@ -14,8 +14,9 @@
 
 # A colour chasing function by Carter Stone
 # running successfully this file should allow the Limo robot within the gazebo 
-# simulation to rotate until it finds a colour within the specified parameters (green)
-# locte the centre of the colour and move toward it pushing it to the wall
+# simulation to rotate until it finds a colour within the specified parameters (green and red)
+# locte the centre of the colour and move toward it pushing it to the wall for 5 seconds
+# after pushiong it should rotate to find a new target
 # Potential Improvements: I experienced some technical problems whilst woking on this
 # but with more time I would like to add path-finding capability to navigate around 
 # static objects in the robots way.
@@ -144,8 +145,6 @@ def main(args=None):
     rclpy.spin(node)
 
     # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
     node.destroy_node()
     rclpy.shutdown()
 
