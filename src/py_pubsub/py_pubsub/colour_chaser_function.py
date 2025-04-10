@@ -12,6 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# A colour chasing function by Carter Stone
+# running successfully this file should allow the Limo robot within the gazebo 
+# simulation to rotate until it finds a colour within the specified parameters (green)
+# locte the centre of the colour and move toward it pushing it to the wall
+# Potential Improvements: I experienced some technical problems whilst woking on this
+# but with more time I would like to add path-finding capability to navigate around 
+# static objects in the robots way.
+
 import rclpy
 from rclpy.node import Node
 
@@ -19,7 +27,8 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge  # Convert between ROS and OpenCV
 import numpy as np
-import cv2
+import cv2 
+import time
 
 # Edited code from:
 # github.com/LCAS/teaching/src/cmp3103m_ros2_code_fragments/cmp3103m_ros2_code_fragments/colour_chaser.py
@@ -35,9 +44,37 @@ class ColourChaser(Node):
         self.tw = Twist()
         self.br = CvBridge()
 
+        # variables
+        self.rotating = False
+        self.rotateTime = None
+        self.pushing = False
+        self.pushingTime = None
+
     def camera_callback(self, data):
-        
-        cv2.namedWindow("ImageWindow", 1)
+        # If we are in rotate mode rotate for 3 seconds
+        if self.rotating == True:
+            if time.time() - self.rotateTime < 3.0:
+                self.tw.linear.x = 0.0
+                self.tw.angular.z = 0.6
+                self.pub_cmd_vel.publish(self.tw)
+                return
+            else:
+                self.rotating = False # return to usual search
+
+        if self.pushing == True:
+            # if we are in push mode push for 5 seconds
+            if time.time() - self.pushingTime < 5.0:
+                self.tw.linear.x = 0.2
+                self.tw.angular.z = 0.0
+                self.pub_cmd_vel.publish(self.tw)
+            else:
+                self.pushing = False
+                self.rotating = True
+                self.rotateTime = time.time()
+                return
+
+
+        #cv2.namedWindow("ImageWindow", 1)
         try:
             # Convert ROS Image message to OpenCV image
             cv_image = self.br.imgmsg_to_cv2(data, desired_encoding='bgr8')
@@ -49,7 +86,7 @@ class ColourChaser(Node):
         hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
         # Colour masks
-        # Edited code from:
+        # Modified code from:
         # https://answers.opencv.org/question/237367/color-threshholding-only-outputs-edge-for-green-color/
         ########################################
         # Identifies the upper and lower thresholdes of green
@@ -62,36 +99,41 @@ class ColourChaser(Node):
 
         # isolates colours within that range
         green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
-        #red_mask = cv2.inRange(hsv_image, lower_red, upper_red)
+        red_mask = cv2.inRange(hsv_image, lower_red, upper_red)
         ########################################
+        # Merge colour masks
+        # Modified code from
+        # https://stackoverflow.com/questions/66515023/how-to-merge-two-bitmasks-in-opencv-with-different-colors
+        combined_mask = cv2.bitwise_or(red_mask, green_mask)
+
 
         # Sorts by area and keeps the biggest
-        contours, hierarchy = cv2.findContours(green_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
+        contours = cv2.findContours(combined_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        #contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
         # Draw contour(s) (image to draw on, contours, contour number -1 to draw all contours, colour, thickness):
         image_contours = cv2.drawContours(cv_image, contours, 0, (0, 100, 100), 20)
 
-        if contours:
+        if len(contours) > 0:
             largest_contour = max(contours, key=cv2.contourArea)
             M = cv2.moments(largest_contour)
             if M["m00"] != 0:
                 cx = int(M["m10"] / M["m00"])
-                width = cv_image.shape[1]
+                cy = int(M["m01"] / M["m00"])
+                height, width = cv_image.shape
                 center_x = width // 2
                 dist_x = cx - center_x
 
                 self.tw.linear.x = 0.1  # Move forward
                 self.tw.angular.z = -float(dist_x) / 300.0  # Turn to center target
-                self.get_logger().info(f"Tracking target at x={cx}, turning with z={self.tw.angular.z:.2f}")
-            else:
-                self.tw.linear.x = 0.0
-                self.tw.angular.z = 0.3  # Rotate to search
+                self.get_logger().info(f"Tracking target. centering on: {center_x}")
         else:
             self.tw.linear.x = 0.0
-            self.tw.angular.z = 0.3  # Rotate in place to find target
+            self.tw.angular.z = 0.3  # Rotate to find target
             self.get_logger().info("No target found. Rotating...")
 
         self.pub_cmd_vel.publish(self.tw)
+
+        #img_resized = cv2.resize(image_contours, (0,0), fx=0.4, fy=0.4) # Reduce image size
 
 def main(args=None):
     print('Starting colour_chaser.py')
