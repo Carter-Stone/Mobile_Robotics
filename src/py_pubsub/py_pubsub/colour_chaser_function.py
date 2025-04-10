@@ -30,17 +30,20 @@ class ColourChaser(Node):
         self.pub_cmd_vel = self.create_publisher(Twist, 'cmd_vel', 1)
         print("Publisher created")
         self.create_subscription(Image, '/limo/depth_camera_link/image_raw', self.camera_callback, 1)
-        print("Signal recieved")
-
+        print("Subscription created")
+        self.get_logger().info("ColourChaser node has started")
+        self.tw = Twist()
         self.br = CvBridge()
 
     def camera_callback(self, data):
         
         cv2.namedWindow("ImageWindow", 1)
-    
-
-        # Convert ROS Image message to OpenCV image
-        cv_image = self.br.imgmsg_to_cv2(data, desired_encoding='bgr8')
+        try:
+            # Convert ROS Image message to OpenCV image
+            cv_image = self.br.imgmsg_to_cv2(data, desired_encoding='bgr8')
+        except Exception as e:
+            self.get_logger().error(f"Failed to convert image: {e}")
+            return
 
         # Convert image to HSV
         hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
@@ -54,8 +57,9 @@ class ColourChaser(Node):
         upper_green = np.array([90, 160, 125]) 
 
         # Identifies the upper and lower thresholds of red
-        lower_red = np.array([170, 70, 50]) 
-        upper_red = np.array([180, 255, 255]) 
+        lower_red = np.array([0, 70, 50]) 
+        upper_red = np.array([10, 255, 255]) 
+
         # isolates colours within that range
         green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
         #red_mask = cv2.inRange(hsv_image, lower_red, upper_red)
@@ -67,53 +71,40 @@ class ColourChaser(Node):
         # Draw contour(s) (image to draw on, contours, contour number -1 to draw all contours, colour, thickness):
         image_contours = cv2.drawContours(cv_image, contours, 0, (0, 100, 100), 20)
 
-        if len(contours) > 0:
-            #find the centre of the target: https://docs.opencv.org/3.4/d8/d23/classcv_1_1Moments.html
-            M = cv2.moments(contours[0])
-            if M['m00'] > 0:
-                cx = int(M['m10']/M['m00'])
-                cy = int(M['m01']/M['m00'])
-                print("Target found. Centering to {}, {}".format(cx, cy))
+        if contours:
+            largest_contour = max(contours, key=cv2.contourArea)
+            M = cv2.moments(largest_contour)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                width = cv_image.shape[1]
+                center_x = width // 2
+                dist_x = cx - center_x
 
-                # Draw a circle at the centroid coordinates
-                # cv2.circle(image, center_coordinates, radius, color, thickness) -1 px will fill the circle
-                cv2.circle(hsv_image, (round(cx), round(cy)), 5,(0, 100, 100), -1)
-
-                # if target is to the left turn left
-                if cx < data.width / 3:
-                    self.tw.angular.z=0.3
-                # if target is to the right turn right
-                elif cx >= 2 * data.width / 3:
-                    self.tw.angular.z=-0.3
-                else: 
-                    #centre of object is within a 100px range of the centre of the image
-                    self.tw.angular.z=-0.0
-                    print("en route")    
+                self.tw.linear.x = 0.1  # Move forward
+                self.tw.angular.z = -float(dist_x) / 300.0  # Turn to center target
+                self.get_logger().info(f"Tracking target at x={cx}, turning with z={self.tw.angular.z:.2f}")
+            else:
+                self.tw.linear.x = 0.0
+                self.tw.angular.z = 0.3  # Rotate to search
         else:
-            print("No target fount")
-            self.tw.angular.z=0.3 # Turn left until we find something
-        
+            self.tw.linear.x = 0.0
+            self.tw.angular.z = 0.3  # Rotate in place to find target
+            self.get_logger().info("No target found. Rotating...")
+
         self.pub_cmd_vel.publish(self.tw)
-
-        #img_resized = cv2.resize(image_contours, (0,0), fx=0.4, fy=0.4) # reduce image size
-        #cv2.imshow("Image window", current_frame_contours_small)
-        #cv2.waitKey(1)
-
 
 def main(args=None):
     print('Starting colour_chaser.py')
-    cv2.startWindowThread()
+    #cv2.startWindowThread()
 
     rclpy.init(args=args)
-
-    colour_chaser = ColourChaser()
-
-    rclpy.spin(colour_chaser)
+    node = ColourChaser()
+    rclpy.spin(node)
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically
     # when the garbage collector destroys the node object)
-    colour_chaser.destroy_node()
+    node.destroy_node()
     rclpy.shutdown()
 
 
