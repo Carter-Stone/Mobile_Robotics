@@ -36,11 +36,9 @@ import time
 class ColourChaser(Node):
 
     def __init__(self):
-        super().__init__('colour_chaser')
-        self.pub_cmd_vel = self.create_publisher(Twist, 'cmd_vel', 1)
-        print("Publisher created")
-        self.create_subscription(Image, '/limo/depth_camera_link/image_raw', self.camera_callback, 1)
-        print("Subscription created")
+        super().__init__('colour_chaser') # Node name
+        self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 1) # Publish data type, topic and queue length
+        self.create_subscription(Image, '/limo/depth_camera_link/image_raw', self.camera_callback, 1) # Subscription data type, topic, call trigger and queue
         self.get_logger().info("ColourChaser node has started")
         self.tw = Twist()
         self.br = CvBridge()
@@ -49,12 +47,15 @@ class ColourChaser(Node):
         self.rotating = False
         self.rotateTime = None
         self.pushing = False
-        self.pushingTime = None
+        self.pushTime = None
+        print("colour chaser initialised")
 
     def camera_callback(self, data):
+        now = time.time()
+
         # If we are in rotate mode rotate for 3 seconds
         if self.rotating == True:
-            if time.time() - self.rotateTime < 3.0:
+            if now - self.rotateTime < 3.0:
                 self.tw.linear.x = 0.0
                 self.tw.angular.z = 0.6
                 self.pub_cmd_vel.publish(self.tw)
@@ -64,14 +65,14 @@ class ColourChaser(Node):
 
         if self.pushing == True:
             # if we are in push mode push for 5 seconds
-            if time.time() - self.pushingTime < 5.0:
+            if now - self.pushTime < 5.0:
                 self.tw.linear.x = 0.2
                 self.tw.angular.z = 0.0
                 self.pub_cmd_vel.publish(self.tw)
             else:
                 self.pushing = False
                 self.rotating = True
-                self.rotateTime = time.time()
+                self.rotateTime = now
                 return
 
 
@@ -102,31 +103,45 @@ class ColourChaser(Node):
         green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
         red_mask = cv2.inRange(hsv_image, lower_red, upper_red)
         ########################################
+
         # Merge colour masks
         # Modified code from
         # https://stackoverflow.com/questions/66515023/how-to-merge-two-bitmasks-in-opencv-with-different-colors
         combined_mask = cv2.bitwise_or(red_mask, green_mask)
 
-
-        # Sorts by area and keeps the biggest
         contours = cv2.findContours(combined_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        #contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
-        # Draw contour(s) (image to draw on, contours, contour number -1 to draw all contours, colour, thickness):
-        image_contours = cv2.drawContours(cv_image, contours, 0, (0, 100, 100), 20)
 
+        # Selects the biggest contour, finds the center and reacts to it
         if len(contours) > 0:
             largest_contour = max(contours, key=cv2.contourArea)
+
+            # some modified code from https://learnopencv.com/tag/cv2-moments/
             M = cv2.moments(largest_contour)
             if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
+                cx = int(M["m10"] / M["m00"])  # Target center
                 cy = int(M["m01"] / M["m00"])
-                height, width = cv_image.shape
+
+                # Calculating distance from centre to target
+                width = cv_image.shape[1]
                 center_x = width // 2
                 dist_x = cx - center_x
+                if (dist_x > 100): # If target is more than 100 px from the center
+                    self.tw.angular.z = -0.2 # Turn right (rotating mode not needed here)
+                    self.tw.linear.x = 0.0
+                    print("Right...")
+                elif (dist_x < -100):
+                    self.tw.angular.z = 0.2 # Turn left
+                    self.tw.linear.x = 0.0
+                    print("Left...")
+                else:  # target is within range
+                    self.tw.linear.x = 0.1  # Move forward (start pushing timer)
+                    self.tw.angular.z = 0.0
+                    self.pushing = True 
+                    self.pushTime = now
+                    print("Forward...")
+            else:
+                cx, cy = 0, 0
 
-                self.tw.linear.x = 0.1  # Move forward
-                self.tw.angular.z = -float(dist_x) / 300.0  # Turn to center target
-                self.get_logger().info(f"Tracking target. centering on: {center_x}")
         else:
             self.tw.linear.x = 0.0
             self.tw.angular.z = 0.3  # Rotate to find target
@@ -138,8 +153,6 @@ class ColourChaser(Node):
 
 def main(args=None):
     print('Starting colour_chaser.py')
-    #cv2.startWindowThread()
-
     rclpy.init(args=args)
     node = ColourChaser()
     rclpy.spin(node)
