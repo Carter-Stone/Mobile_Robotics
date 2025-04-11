@@ -57,14 +57,14 @@ class ColourChaser(Node):
         if self.rotating == True:
             if now - self.rotateTime < 3.0:
                 self.tw.linear.x = 0.0
-                self.tw.angular.z = 0.6
+                self.tw.angular.z = 0.5
                 self.pub_cmd_vel.publish(self.tw)
                 return
             else:
                 self.rotating = False # return to usual search
-
+        
+        # if we are in push mode push for 5 seconds
         if self.pushing == True:
-            # if we are in push mode push for 5 seconds
             if now - self.pushTime < 5.0:
                 self.tw.linear.x = 0.2
                 self.tw.angular.z = 0.0
@@ -75,14 +75,8 @@ class ColourChaser(Node):
                 self.rotateTime = now
                 return
 
-
-        #cv2.namedWindow("ImageWindow", 1)
-        try:
-            # Convert ROS Image message to OpenCV image
-            cv_image = self.br.imgmsg_to_cv2(data, desired_encoding='bgr8')
-        except Exception as e:
-            self.get_logger().error(f"Failed to convert image: {e}")
-            return
+        # Convert ROS Image message to OpenCV image
+        cv_image = self.br.imgmsg_to_cv2(data, desired_encoding='bgr8')
 
         # Convert image to HSV
         hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
@@ -90,6 +84,7 @@ class ColourChaser(Node):
         # Colour masks
         # Modified code from:
         # https://answers.opencv.org/question/237367/color-threshholding-only-outputs-edge-for-green-color/
+        # By adding red boundaries and mask
         ########################################
         # Identifies the upper and lower thresholdes of green
         lower_green = np.array([80, 140, 110]) 
@@ -107,16 +102,17 @@ class ColourChaser(Node):
         # Merge colour masks
         # Modified code from
         # https://stackoverflow.com/questions/66515023/how-to-merge-two-bitmasks-in-opencv-with-different-colors
+        # By changing the variable names
         combined_mask = cv2.bitwise_or(red_mask, green_mask)
+        ####################################################
 
         contours = cv2.findContours(combined_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
 
         # Selects the biggest contour, finds the center and reacts to it
-        if len(contours) > 0:
-            largest_contour = max(contours, key=cv2.contourArea)
-
+        if len (contours) > 0:
             # some modified code from https://learnopencv.com/tag/cv2-moments/
-            M = cv2.moments(largest_contour)
+            M = cv2.moments(contours[0])
             if M["m00"] != 0:
                 cx = int(M["m10"] / M["m00"])  # Target center
                 cy = int(M["m01"] / M["m00"])
